@@ -7,18 +7,20 @@ import numpy as np
 from pyubphotonlib.photonvisibility import PhotonVisibility
 
 pvs = PhotonVisibility( "photonlib.json" )
-LY = 40000.0 # photons/MeV
-CE = 0.40
-QE = 0.20*0.8
+LY = 29000.0 # photons/MeV
+CE = 1.0
+QE = 0.0128
 RATE = 1.0 # decay/kg/sec
-FASTFRAC = 0.5
+FASTFRAC = 0.59
 FASTCONST = 0.006 # usec
 SLOWCONST = 1.600 # usec
+FASTONLY = True
 LARDENSITY = 1.39 # g/cm^3
 TPB = 1.1
 XBOUNDS = [-50,300] # cm
 YBOUNDS = [-180,180] # cm
 ZBOUNDS = [-80,1110] # cm
+ENERGY_MEV = 0.200 # MeV
 
 def genDecayPosition():
     pos = np.asarray( [ XBOUNDS[0] + np.random.random()*(XBOUNDS[1]-XBOUNDS[0]),
@@ -40,6 +42,7 @@ def ar39mc( photonlibrary, nevents ):
     nphotons = array('f',[0])
     npe = array('f',[0])
     nhits = array('i',[0])
+    chhits = array('i',[0]*32)
     dt = array('f',[0])
     tevent = array('f',[0])
     posv = array( 'f', [0]*3 )
@@ -54,6 +57,7 @@ def ar39mc( photonlibrary, nevents ):
     eventtree.Branch( "nphotons", nphotons, "nphotons/F" )
     eventtree.Branch( "npe", npe, "npe/F" )
     eventtree.Branch( "nhits", nhits, "nhits/I" )
+    eventtree.Branch( "chhits", chhits, "chhits[32]/I" )
     eventtree.Branch( "tevent", tevent, "tevent/F" )
     eventtree.Branch( "dt", dt, "dt/F" )
     eventtree.Branch( "posv", posv, "posv[3]/F" )
@@ -86,8 +90,10 @@ def ar39mc( photonlibrary, nevents ):
         pos = genDecayPosition()
         for i in range(0,3):
             posv[i] = pos[i]
+        for i in range(0,32):
+            chhits[i] = 0
         # gen energy
-        energy[0] = 0.600 # MeV
+        energy[0] = ENERGY_MEV # MeV
         eventid[0] += 1
         opcounts = photonlibrary.photonlib.getOpChannelCounts( pos )
         nphotons[0] = 0
@@ -99,17 +105,25 @@ def ar39mc( photonlibrary, nevents ):
             nphotons[0] += counts*(LY*energy[0])
             npe[0] += counts*(LY*energy[0])*CE*QE*TPB
             ophits = np.random.poisson( counts*(LY*energy[0])*CE*QE*TPB )
-            nhits[0] += ophits
+            nemitted = 0
             for ihit in xrange(0,ophits):
                 if np.random.random()<FASTFRAC:
+                    # Fast component
                     fastcomp[0] = 1
                     dthit[0] = np.random.exponential( FASTCONST )
                     thit[0] = tevent[0] + dthit[0]
+                    nemitted += 1
                 else:
+                    # slow component
+                    if FASTONLY:
+                        continue
                     fastcomp[0] = 0
                     dthit[0] = np.random.exponential( SLOWCONST )
                     thit[0] = tevent[0] + dthit[0]
+                    nemitted += 1
                 petree.Fill()
+            chhits[opch] = nemitted
+            nhits[0] += nemitted
         eventtree.Fill()
         
     eventtree.Write()
